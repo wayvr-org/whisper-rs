@@ -187,6 +187,7 @@ fn main() {
         .define("WHISPER_ALL_WARNINGS_3RD_PARTY", "OFF")
         .define("WHISPER_BUILD_TESTS", "OFF")
         .define("WHISPER_BUILD_EXAMPLES", "OFF")
+        .define("WHISPER_BUILD_IS_DEV", "OFF")
         .very_verbose(true)
         .pic(true);
 
@@ -381,15 +382,28 @@ fn add_link_search_path(dir: &std::path::Path) -> std::io::Result<()> {
 
 fn get_whisper_cpp_version(whisper_root: &std::path::Path) -> std::io::Result<Option<String>> {
     let cmake_lists = BufReader::new(File::open(whisper_root.join("CMakeLists.txt"))?);
+    let mut major = None;
+    let mut minor = None;
+    let mut patch = None;
 
     for line in cmake_lists.lines() {
         let line = line?;
+        let line = line.trim();
 
-        if let Some(suffix) = line.strip_prefix(r#"project("whisper.cpp" VERSION "#) {
-            let whisper_cpp_version = suffix.trim_end_matches(')');
-            return Ok(Some(whisper_cpp_version.into()));
+        // whisper.cpp 1.9.x changed version declaration
+        for (prefix, slot) in [
+            ("set(WHISPER_VERSION_MAJOR ", &mut major),
+            ("set(WHISPER_VERSION_MINOR ", &mut minor),
+            ("set(WHISPER_VERSION_PATCH ", &mut patch),
+        ] {
+            if let Some(suffix) = line.strip_prefix(prefix) {
+                *slot = suffix.trim_end_matches(')').trim().parse::<u32>().ok();
+            }
         }
     }
 
-    Ok(None)
+    Ok(match (major, minor, patch) {
+        (Some(major), Some(minor), Some(patch)) => Some(format!("{major}.{minor}.{patch}")),
+        _ => None,
+    })
 }
